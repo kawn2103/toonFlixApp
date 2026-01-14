@@ -1,8 +1,15 @@
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:toonflixapp/models/webtoon_detail_model.dart';
+import 'package:toonflixapp/models/webtoon_episode_model.dart';
+import 'package:toonflixapp/services/api_service.dart';
+import 'package:toonflixapp/widgets/episode_widget.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class DetailScreen extends StatelessWidget {
+class DetailScreen extends StatefulWidget {
   final title, thumb, id;
+
 
   const DetailScreen({
     super.key,
@@ -10,6 +17,54 @@ class DetailScreen extends StatelessWidget {
     required this.thumb,
     required this.id,
   });
+
+  @override
+  State<DetailScreen> createState() => _DetailScreenState();
+}
+
+class _DetailScreenState extends State<DetailScreen> {
+
+  late Future<WebtoonDetailModel> webtoon;
+  late Future<List<WebtoonEpisodeModel>> episodes;
+  late SharedPreferences prefs;
+  bool isLiked = false;
+
+  Future initPrefs() async{
+    prefs = await SharedPreferences.getInstance();
+    final likedToons = prefs.getStringList('likedToons');
+    if(likedToons != null) {
+      if(likedToons.contains(widget.id) == true){
+        setState(() {
+          isLiked = true;  
+        });
+      }
+    } else {
+      await prefs.setStringList('likedToons', []);
+    }
+  }
+
+  Future<void> onHeartTap() async {
+    final likedToons = prefs.getStringList('likedToons');
+    if(likedToons != null){
+      if(isLiked){
+        likedToons.remove(widget.id);
+      } else {
+        likedToons.add(widget.id);
+      }
+      await prefs.setStringList('likedToons', likedToons);
+      setState(() {
+        isLiked = !isLiked;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    webtoon = ApiService.getToonById(widget.id);
+    episodes = ApiService.getLatestEpidsodesById(widget.id);
+    initPrefs();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,46 +76,109 @@ class DetailScreen extends StatelessWidget {
         shadowColor: Colors.black,
         backgroundColor: Colors.white,
         foregroundColor: Colors.green,
+        actions: [
+          IconButton(
+            onPressed: onHeartTap , 
+            icon: Icon(
+              isLiked ? Icons.favorite : Icons.favorite_border
+            ),
+          ),
+        ],
         title: Text(
-          title,
+          widget.title,
           style: const TextStyle(
             fontSize: 24,
           ),
         )
       ),
-      body: Column(
-        children: [
-          const SizedBox(height: 50,),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 20, 
+            vertical: 35,
+          ),
+          child: Column(
             children: [
-              Hero(
-                tag: id,
-                child: Container(
-                  width: 250, 
-                  clipBehavior: Clip.hardEdge,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(15),
-                    boxShadow: [
-                      BoxShadow(
-                        blurRadius: 7,
-                        offset: const Offset(5, 5),
-                        color: Colors.black.withValues(alpha: 0.5),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Hero(
+                    tag: widget.id,
+                    child: Container(
+                      width: 200, 
+                      clipBehavior: Clip.hardEdge,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(15),
+                        boxShadow: [
+                          BoxShadow(
+                            blurRadius: 7,
+                            offset: const Offset(5, 5),
+                            color: Colors.black.withValues(alpha: 0.5),
+                          ),
+                        ],
                       ),
-                    ],
+                      child: Image.network(
+                        widget.thumb,
+                        headers: const {
+                          'Referer': 'https://comic.naver.com',
+                        },
+                      ),
+                    ),
                   ),
-                  child: Image.network(
-                    thumb,
-                    headers: const {
-                      'Referer': 'https://comic.naver.com',
-                    },
-                  ),
-                ),
+                ],
+              ),
+              const SizedBox(height: 15,),
+              FutureBuilder(
+                future: webtoon, 
+                builder: (context, snapshot){
+                  if(snapshot.hasData){
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          snapshot.data!.about,
+                          style: const TextStyle(
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 15,),
+                        Text(
+                          '${snapshot.data!.genre} / ${snapshot.data!.age}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+                  return const Text("...");
+                },
+              ),
+              const SizedBox(
+                height: 15,
+              ),
+              FutureBuilder(
+                future: episodes,
+                builder: (context, snapshot) {
+                  if(snapshot.hasData){
+                    return Column(
+                      children: [
+                        for(var episode in snapshot.data!)
+                          Episode(
+                            episode: episode,
+                            webtoonId: widget.id,
+                          )
+                      ],
+                    );
+                  }
+                  return Container();
+                },
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
+
